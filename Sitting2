@@ -1,0 +1,147 @@
+#lang racket
+
+(define (atom? x)
+  (and (not (null? x)) (not (pair? x))))
+
+(define (build a b)
+  (list a b))
+
+(define (first x)
+  (car x))
+
+(define (second x)
+  (car (cdr x)))
+
+(define (third x)
+  (car (cdr (cdr x))))
+
+(define new-entry build)
+
+(define lookup-in-entry 
+         (lambda (name entry entry-f)
+           (lookup-in-entry-help name
+                                 (first entry)
+                                 (second entry)
+                                 entry-f)))
+
+(define (lookup-in-entry-help a terms definitions default-f)
+  (cond ((null? terms) (default-f a))
+        ((eq? a (car terms)) (car definitions))
+        (else (lookup-in-entry-help a (cdr terms) (cdr definitions) default-f))))
+
+(define extend-table cons)
+
+(define (lookup-in-table name table table-f)
+  (cond ((null? table) (table-f name))
+        (else (lookup-in-entry name (car table) (lambda (name) (lookup-in-table name (cdr table) table-f))))))
+
+(define expression-to-action
+  (lambda (e)
+    (cond ((atom? e) (atom-to-action e))
+          (else (list-to-action e)))))
+
+(define atom-to-action
+  (lambda (e)
+    (cond ((number? e) *const)
+          ((eq? e #t) *const)
+          ((eq? e #f) *const)
+          ((eq? e 'cons) *const)
+          ((eq? e 'car) *const)
+          ((eq? e 'cdr) *const)
+          ((eq? e 'null?) *const)
+          ((eq? e 'eq) *const)
+          ((eq? e 'atom?) *const)
+          ((eq? e 'zero) *const)
+          ((eq? e 'add1) *const)
+          ((eq? e 'sub1) *const)
+          ((eq? e 'number?) *const)
+          (else *identifier))))
+
+(define list-to-action
+  (lambda (e)
+    (cond ((atom? (car e))
+           (cond ((eq? (car e) (quote quote)) *quote)
+                 ((eq? (car e) (quote lambda)) *lambda)
+                 ((eq? (car e) (quote (cond))) *cond)
+                 (else *application)))
+          (else *application))))
+
+(define value
+  (lambda (e)
+    (meaning e (quote ()))))
+
+(define meaning
+  (lambda (e table)
+    ((expression-to-action e) e table))) 
+
+(define *const
+  (lambda (e table)
+    (cond ((number? e) e)
+          ((eq? e #t) #t)
+          ((eq? e #f) #f)
+          (else (build (quote primitive) e)))))
+
+(define *quote (lambda (e table) (text-of e)))
+(define text-of second)
+
+(define *identifier 
+  (lambda (e table)
+    (lookup-in-table e table (lambda (x) (error "Couldn't find identifier")))))
+
+(define *lambda
+  (lambda (e table)
+    (build (quote non-primitive)
+           (cons table (cdr e)))))
+
+(define body-of third)
+(define table-of first)
+(define formals-of second)
+
+
+(define evcon
+  (lambda (lines table)
+    (cond ((else? (question-of (car lines)))
+           (meaning (answer-of (car lines)) table))
+          ((meaning (question-of (car lines)) table)
+           (meaning (answer-of (car lines)) table))
+          (else (evcon (cdr lines) table)))))
+
+(define question-of first)
+(define answer-of second)
+(define (cond-lines-of e)
+  (cdr e))
+
+(define (else? x)
+  (eq? x 'else))
+
+(define *cond (lambda (e table)
+                (evcon (cond-lines-of e) table)))
+
+
+(define evlis (lambda (args table)
+                (cond ((null? args) '())
+                      (else (cons (meaning (car args) table)
+                                  (evlis (cdr args) table))))))
+
+(define *application
+  (lambda (e table)
+    (apply (meaning (function-of e) table)
+           (evlis (arguments-of e) table))))
+
+(define function-of car)
+(define arguments-of cdr)
+
+(define primitive? (lambda (l) (eq? (first l) 'primitive)))
+(define non-primitive? (lambda (l) (eq? (first l) 'non-primitive)))
+
+(define apply
+  (lambda (fun vals)
+    (cond ((primitive? fun) (apply-primitive (second fun) vals))
+          ((non-primitive? fun)
+           (apply-closure (second fun) vals)))))
+
+
+
+
+
+
